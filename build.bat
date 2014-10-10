@@ -1,3 +1,4 @@
+mkdir build
 rm build/*.BIN
 chdir h
 make clean
