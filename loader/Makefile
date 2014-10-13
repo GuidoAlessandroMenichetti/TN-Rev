@@ -1,23 +1,12 @@
-PSPSDK=$(shell psp-config --pspsdk-path)
-PSPDEV=$(shell psp-config --pspdev-path)
-INCLUDE=$(PSPSDK)/include
+TARGET = TN
+OBJS = main.o ../common/lib.o
 
-CC = psp-gcc
-CFLAGS := -D PSP -I $(INCLUDE) -W -Wall -O2 -G0 -fno-pic -mno-abicalls -w -fomit-frame-pointer
-ASM = psp-as
+INCDIR = ../include
+CFLAGS = -O2 -Os -G0 -Wall -fshort-wchar -fno-pic -mno-check-zero-division
+CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti
+ASFLAGS = $(CFLAGS)
 
-all: main.o lib.o linker.x
-	$(PSPDEV)/bin/psp-ld -T linker.x -L$(PSPSDK)/lib main.o lib.o -o main.elf
-	$(PSPDEV)/bin/psp-strip -s main.elf
-	$(PSPDEV)/bin/psp-objcopy -O binary main.elf TN.BIN
+LDFLAGS = -nostartfiles -T linker.x -nostdlib
 
-lib.o: ../common/lib.c
-	$(CC) $(CFLAGS) -S ../common/lib.c -o lib.s
-	$(ASM) lib.s -o lib.o
-	
-main.o: main.c
-	$(CC) $(CFLAGS) -S main.c -o main.s
-	$(ASM) main.s -o main.o
-	
-clean:
-	rm *.bin *.o
+PSPSDK = $(shell psp-config --pspsdk-path)
+include ../lib/build_bin.mak

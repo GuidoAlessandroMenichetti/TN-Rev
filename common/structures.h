@@ -1,11 +1,6 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#define MAKE_STH(f)  ((((unsigned)(f) & 0x0FFFFFFC) >> 2) | 0x08000000)
-#define MAKE_STH2(f) ((((unsigned)(f) & 0xF3FFFFFF) << 2) | 0x80000000) 
-#define MAKE_JUMP(f) ((((unsigned)(f) >> 2) & 0x03FFFFFFF) | 0x08000000)
-#define MAKE_CALL(f) ((((unsigned)(f) >> 2) & 0x03FFFFFFF) | 0x0C000000) 
-
 typedef struct s_kernel_file
 {
 	char * name;
@@ -20,7 +15,7 @@ typedef struct s_packet_entry
 	unsigned name_size;
 	//name
 	//data
-} packet_entry;
+} __attribute__ ((__packed__)) packet_entry;
 
 typedef struct
 {
