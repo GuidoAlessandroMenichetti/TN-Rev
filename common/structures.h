@@ -1,6 +1,33 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+//taken from uOFW
+typedef struct
+{
+	u32 size;
+	u32 flags;
+	char str8[16];
+	char str24[11];
+	int unk36;
+	char qtgp2[8];
+	char qtgp3[16];
+	u32 allowReplaceUmd;
+	char gameId[14];
+	u32 unk84;
+	char str88[8];
+	u32 umdCacheOn;
+	u32 sdkVersion;
+	u32 compilerVersion;
+	u32 dnas;
+	u32 unk112;
+	char str116[64];
+	char str180[11];
+	char str196[8];
+	char unk204[8];
+	int unk212;
+	int unk216;
+} SceKernelGameInfo;
+
 typedef struct s_kernel_file
 {
 	char * name;

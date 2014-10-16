@@ -1,73 +1,85 @@
-//tn-v loader reverse by gbot
+//tn-v loader full reverse by gbot
 
+#include "reboot.h"
 #include "../common/lib.h"
 #include "../common/structures.h"
-#include "reboot.h"
-
-static void (* _sceKernelDcacheWritebackInvalidateAll)() = (void *) 0x88000744; //*(0x00010000 + 4336);
-static void (* _sceKernelIcacheInvalidateAll)() = (void *) 0x88000E98; //*(0x00010000 + 4340);
-static char * (* _sceUnknown1)() = (void *) 0x880098A4; //*(0x00010000 + 4344);
-static char * (* _sprintf)(char * destination, const char * mask, ...) = (void *) 0x8800E1D4; //*(0x00010000 + 4348);
-static unsigned (* _sceUnknown2)(unsigned, int, void *, int) = (void *) 0x8800F804; //*(0x00010000 + 4352);
-
-SceModule2 * (* _sceKernelFindModuleByName)(const char *); //*(0x00010000 + 7204)
-int (* _sceIoWrite)(SceUID, void *, unsigned); //*(0x00010000 + 7208)
-int (* _sceIoClose)(SceUID); //*(0x00010000 + 7212)
-SceUID (* _sceIoOpen)(const char *, int, int); //*(0x00010000 + 7216)
-
-int (* _sceReboot)(void *, void *, int, int); // *(0x00010000 + 7816);
-int (* _LoadExec00002B04)(int); // *(0x00010000 + 7820);
-int (* _sceIoGetstat)(const char *, SceIoStat *); //*(0x00010000 + 7824)
-int (* _sceIoRead)(SceUID, void *, unsigned); //*(0x00010000 + 7828)
-
-static char vshmain_args[0x400]; //0x00010000 + 6180
 
 typedef struct
 {
-	char unknown_string[14]; //0x00010000 + 7220
-	char exploit_path[66]; //0x00010000 + 7234
-	int fw_version; //*(0x0001000 + 7300)
-	int gzip_dec_result; //*(0x00010000 + 7304) 
-	char unknown_big[408]; //0x00010000 + 7308
-	char unknown_not_used[68];//0x00010000 + 7720
-	int load_mode; //*(0x00010000 + 7788)
-	char unknown_not_used2[28]; //0x00010000 + 778C
-} t_globals; //size 596
+	char game_id[14];
+	char exploit_path[66];
+	int fw_version;
+	int reboot_size;
+	char unknown_big[408];
+	char unknown_not_used[68];
+	int load_mode; 
+	char unknown_not_used2[28]; 
+} __attribute__((__packed__)) t_globals; //size 596
+
+static void (* _sceKernelDcacheWritebackInvalidateAll)() = (void *) 0x88000744; 
+static void (* _sceKernelIcacheInvalidateAll)() = (void *) 0x88000E98;
+static SceKernelGameInfo * (* _sceKernelGetGameInfo)() = (void *) 0x880098A4;
+static char * (* _sprintf)(char * destination, const char * mask, ...) = (void *) 0x8800E1D4;
+static unsigned (* _sceKernelGzipDecompress)(unsigned, int, void *, int) = (void *) 0x8800F804;
+
+SceUID (* _sceIoOpen)(const char *, int, int);
+int (* _sceIoRead)(SceUID, void *, unsigned);
+int (* _sceIoWrite)(SceUID, const void *, unsigned);
+int (* _sceIoClose)(SceUID);
+int (* _sceIoGetstat)(const char *, SceIoStat *);
+
+SceModule2 * (* _sceKernelFindModuleByName)(const char *);
+int (* _sceReboot)(void *, void *, int, int);
+int (* _LoadExec000029C0)(int); 
 
 t_globals globals;
+static char vshmain_args[0x400]; 
 
-void fill_screen(unsigned color);
-void error();
-int load_config(t_config * data);
-int get_fw_version();
-int load_packet_files();
+//#define DEBUG
+#ifdef DEBUG
 
-int patch_unknown1(int arg);
-int patch_reboot(void * r_param, void * e_param, int api, int rnd);
-void patch_loadexec(unsigned location, unsigned size);
+void _log_create()
+{
+	char buffer[0x100];
+	_sprintf(buffer, "%s/LOG.TXT", globals.exploit_path);
+	SceUID fd = _sceIoOpen(buffer, PSP_O_CREAT | PSP_O_WRONLY | PSP_O_TRUNC, 0777); 
+	_sceIoClose(fd);
+};
 
-void fix_kernel();
-int kfunction();
-void do_exploit();
+void _log(const char * str)
+{
+	char buffer[0x100];
+	_sprintf(buffer, "%s/LOG.TXT", globals.exploit_path);
+	SceUID fd = _sceIoOpen(buffer, PSP_O_CREAT | PSP_O_WRONLY | PSP_O_APPEND, 0777);
+	_sprintf(buffer, str);
+	_sceIoWrite(fd, buffer, _strlen(buffer));
+	_sceIoClose(fd);
+};
 
-void fill_screen(unsigned color) //sub_000101C8
+#endif
+
+void fill_screen(unsigned color)
 {
 	unsigned pixel;
 	for(pixel = 0x44000000; pixel < 0x44180000; pixel += 4)
 		*(unsigned *)pixel = color;
 };
 
-void error() //sub_0001020C
+void error()
 {
 	//fills screen red
 	fill_screen(0x000000FF);
 	
-	//crash the system
-	_sw(0x0, 0x0);
+	//stop the system
+	__asm("break 0x0");
 };
 
-int load_config(t_config * data) //sub_00010434
+int load_config(t_config * data)
 {
+	#ifdef DEBUG
+	_log("Loading config from ms0:/flash/config.tn.\n");
+	#endif
+
 	//fills config structure with 0's
 	_memset(data, 0, sizeof(t_config));
 	
@@ -87,15 +99,25 @@ int load_config(t_config * data) //sub_00010434
 		_memset(data, 0x0, sizeof(t_config));
 		ret = -1;
 	};
-		
+	
 	//closes file
 	_sceIoClose(fd);
+	
+	#ifdef DEBUG
+	if(ret != -1)
+		_log("Config successfully loaded\n");
+	#endif
+
 	return ret;
 };
 
-int get_fw_version() //sub_00010AB8
+int get_fw_version()
 {
-	fill_screen(0x00999999); //grey
+	#ifdef DEBUG
+	_log("Getting fw version\n");
+	#endif
+
+	fill_screen(0x00999999); //grey	
 	
 	//searches savedata_auto_dialog.prx module file entry
 	kernel_file * file = (kernel_file *) 0x8B000000;
@@ -120,6 +142,7 @@ int get_fw_version() //sub_00010AB8
 				case 0xB6C0: return 0x310; //fw 3.10
 				case 0xB740: return 0x315; //fw 3.15
 				case 0xBE00: return 0x318; //fw 3.18
+				case 0xBF00: return 0x330; //fw 3.30
 			};
 			
 			//unknown firmware, cant continue :(
@@ -131,7 +154,7 @@ int get_fw_version() //sub_00010AB8
 			//builds output path
 			char size_path[64];
 			_sprintf(size_path, "%s/size.txt", globals.exploit_path); 
-			SceUID fd = _sceIoOpen(size_path, 1538, 0777);
+			SceUID fd = _sceIoOpen(size_path, PSP_O_CREAT | PSP_O_WRONLY | PSP_O_TRUNC, 0777);
 
 			//saves string to a file in exploit_path
 			_sceIoWrite(fd, size_string, _strlen(size_string));
@@ -139,6 +162,10 @@ int get_fw_version() //sub_00010AB8
 			
 			//fills screen with blue
 			fill_screen(0x00FF0000);
+			
+			#ifdef DEBUG
+			_log("Unknown firmware, stopping\n");
+			#endif
 			
 			//stops the system
 			__asm("break 0x0");
@@ -152,13 +179,19 @@ int get_fw_version() //sub_00010AB8
 	return 0xFFFFFFFF;
 };
 
-int load_packet_files() //sub_000105AC
+int load_packet_files()
 {
 	fill_screen(0x0000FFFF); //yellow
 
 	//builds packet file path
 	char packet_file[64];
 	_sprintf(packet_file, "%s/FLASH0.TN", globals.exploit_path);
+	
+	#ifdef DEBUG
+	_log("Loading packet from ");
+	_log(packet_file);
+	_log("\n");
+	#endif
 	
 	//tries to open packet
 	SceUID fd = _sceIoOpen(packet_file, PSP_O_RDONLY, 0);
@@ -180,7 +213,7 @@ int load_packet_files() //sub_000105AC
 		file++;
 	};
 	
-	//copies those modules to a lower address
+	//copies those modules info to a higher address
 	_memcpy((void *)(0x8BA00000 + packet_file_count * sizeof(kernel_file)), (void *) 0x8B000000, k_files_bytes);
 
 	//nulls buffer of last entry
@@ -202,8 +235,7 @@ int load_packet_files() //sub_000105AC
 			continue;
 		
 		//new data address aligned
-		new_data = (char *)(((unsigned) new_data + 63) & 0xFFFFFFC0);
-		//new_data = (char *)(((unsigned) new_data + 64) & 0xFFFFFFC0);
+		new_data = (char *)(((unsigned) new_data + 64) & 0xFFFFFFC0);
 		
 		//info for the kernel file entry
 		new_file->name = new_name;
@@ -214,6 +246,12 @@ int load_packet_files() //sub_000105AC
 		_sceIoRead(fd, new_name, entry.name_size);
 		_sceIoRead(fd, new_data, entry.data_size);
 		
+		#ifdef DEBUG
+		char debug_text[96];
+		_sprintf(debug_text, "%s\n\tname 0x%08X\n\tdata 0x%08X\n\tsize 0x%08X\n", new_name, new_name, new_data, entry.data_size);
+		_log(debug_text);
+		#endif
+		
 		//update pointers
 		new_data += entry.data_size;
 		new_name += entry.name_size;
@@ -222,28 +260,37 @@ int load_packet_files() //sub_000105AC
 	
 	//closes file
 	_sceIoClose(fd);
-	return bytes_read;
+	
+	#ifdef DEBUG
+	_log("Packet loaded successfully\n");
+	#endif
+	
+	return 0;
 };
 
-int patch_unknown1(int arg) //loc_00010C7C
+int hook_unknown(int arg)
 {
 	//saves fw version
 	globals.fw_version = get_fw_version();
 	
 	//load modules from flash0.tn
 	load_packet_files();
-	
+
 	fill_screen(0x00FFFFFF);
 	
-	return _LoadExec00002B04(arg);
+	#ifdef DEBUG
+	_log("Calling _LoadExec000029C0()\n");
+	#endif
+	
+	return _LoadExec000029C0(arg);
 };
 
-int patch_reboot(void * r_param, void * e_param, int api, int rnd) //loc_000104E0
+int hook_reboot(void * r_param, void * e_param, int api, int rnd)
 {
-	fill_screen(0x00123456);
+	fill_screen(0x00FFFFF0);
 	
-	//probably sceKernelGzipDecompress
-	globals.gzip_dec_result = _sceUnknown2(0x88FC0000, 16384, reboot_data, 0); 
+	//decompress reboot data
+	globals.reboot_size = _sceKernelGzipDecompress(0x88FC0000, 0x4000, reboot_data, 0); 
 	
 	unsigned address = 0xA83FF000;
 	if(globals.fw_version < 0x210)
@@ -255,22 +302,39 @@ int patch_reboot(void * r_param, void * e_param, int api, int rnd) //loc_000104E
 	//backup global variables
 	_memcpy((void *) 0x88FB0000, &globals, sizeof(globals));
 	
+	#ifdef DEBUG
+	_log("Calling _sceReboot()");
+	#endif
+	
 	//reboot
 	return _sceReboot(r_param, e_param, api, rnd);
 };
 
-void patch_loadexec(unsigned location, unsigned size) //sub_0001022C
+void patch_loadexec(unsigned location, unsigned size)
 {
+	#ifdef DEBUG
+	_log("Patching loadexec\n");
+	#endif
+
 	fill_screen(0x00FFFF00); //light blue
 	_sh(0x1000, location + 0x16A6);
 	_sh(0x1000, location + 0x241E);
 	_sh(0x1000, location + 0x2622);
-	
-	unsigned loc;
+
+	unsigned loc, patches_done = 0;
 	for(loc = location; loc < location + size; loc += 4)
 	{
 		if(_lw(loc) == 0x24070200) //@0x00002964 in 3.18
+		{
 			_memset((void *) loc, 0, 0x20);
+			patches_done++;
+		}
+		else if(_lw(loc) == 0x02202021 && _lw(loc + 4) == 0x00401821) //@0x000029C0 in 3.18
+		{
+			_LoadExec000029C0 = (void *) MAKE_ADDRESS(_lw(loc - 4));
+			_sw(MAKE_CALL(hook_unknown), loc - 4);
+			patches_done++;
+		}
 		else if(_lw(loc) == 0x17C001D3) //@0x00002B9C in 3.18
 		{
 			_sw(0x00000000, loc); //bnez $fp, loc_000032EC
@@ -279,7 +343,7 @@ void patch_loadexec(unsigned location, unsigned size) //sub_0001022C
 			_sw(0x12E500B7, loc + 0x18C); //bnez $s7, loc_00003008
 			_sw(0xAC570018, loc + 0x190); //sw $a1, 24($v0)
 			
-			_sw(MAKE_CALL(patch_reboot), loc + 0x264); //jal sub_00000000
+			_sw(MAKE_CALL(hook_reboot), loc + 0x264); //jal sub_00000000
 			_sb(0x000000FC, loc + 0x2B0); //lui $at, 0x8860
 			
 			_sw(0x24050200, loc + 0x7FC); //li $s0, 512
@@ -289,20 +353,22 @@ void patch_loadexec(unsigned location, unsigned size) //sub_0001022C
 			_sw(MAKE_STH(loc + 8), loc + 0x810); //lui $v0, 0x0
 			_sw(0x24170001, loc + 0x814); //lw $v0, 9952($v0)
 			
-			_sw(0x03E00008, loc + 0xB0C); //jr $ra (sceKernelGetUserLevel import)
-			_sw(0x24020004, loc + 0xB10); //nop
+			_sw(0x03E00008, loc + 0xB0C); //jr $ra (sceKernelGetUserLevel import) -> jr $ra
+			_sw(0x24020004, loc + 0xB10); //nop -> li $v0, 4
 			
 			_sceReboot = (void *) location;
-		}
-		else if(_lw(loc) == 0x02202021 && _lw(loc + 4) == 0x00401821) //@0x000029C0 in 3.18
-		{
-			_LoadExec00002B04 = (void *) MAKE_STH2(loc - 4);
-			_sw(MAKE_CALL(patch_unknown1), loc - 4);
-		};		
+			patches_done++;
+		};	
 	};
+		
+	#ifdef DEBUG
+	char debug_text[64];
+	_sprintf(debug_text, "Patches done: %d\n", patches_done);
+	_log(debug_text);
+	#endif
 };
 
-void fix_kernel() //sub_00010F98
+void fix_kernel()
 {
 	_sw(0x00000000, 0x8800F768);
 };
@@ -310,7 +376,7 @@ void fix_kernel() //sub_00010F98
 int kfunction()
 {
 	//set k1 to 0
-	__asm("move $k1, $0\n");
+	__asm("move $k1, $0;");
 	
 	//fills screen with blue
 	fill_screen(0x00FF0000);
@@ -330,12 +396,17 @@ int kfunction()
 		};
 	};
 	
-	//searches IO file functions, IoFileMgrForKernel
+	//searches IO file functions
 	_sceIoOpen = FindExport("sceIOFileManager", "IoFileMgrForKernel", 0x109F50BC);
 	_sceIoRead = FindExport("sceIOFileManager", "IoFileMgrForKernel", 0x6A638D83);
 	_sceIoWrite = FindExport("sceIOFileManager", "IoFileMgrForKernel", 0x42EC03AC);
 	_sceIoClose = FindExport("sceIOFileManager", "IoFileMgrForKernel", 0x810C4BC3);
 	_sceIoGetstat = FindExport("sceIOFileManager", "IoFileMgrForKernel", 0xACE946E8);
+	
+	#ifdef DEBUG
+	_log_create();
+	_log("Kernel function reached\n");
+	#endif
 
 	//gets load exec module info
 	SceModule2 * mod = _sceKernelFindModuleByName("sceLoadExec");
@@ -347,9 +418,15 @@ int kfunction()
 	_sceKernelIcacheInvalidateAll();
 	_sceKernelDcacheWritebackInvalidateAll();
 	
-	//???
-	char * v0 = _sceUnknown1();
-	_sprintf(globals.unknown_string, v0 + 68);
+	//gets game ID
+	SceKernelGameInfo * game_info = _sceKernelGetGameInfo();
+	_sprintf(globals.game_id, game_info->gameId);
+	
+	#ifdef DEBUG
+	_log("Game ID: ");
+	_log(globals.game_id);
+	_log("\n");
+	#endif
 	
 	//finds readbuffer function
 	void (* _sceCtrlReadBufferPositive)(SceCtrlData *, int) = NULL;
@@ -374,6 +451,10 @@ int kfunction()
 		//custom menu loading
 		if(config.load_eboot && _sceIoGetstat("ms0:/PSP/GAME/BOOT/FBOOT.PBP", &status) >= 0)
 		{
+			#ifdef DEBUG
+			_log("Launching custom EBOOT\n");
+			#endif
+			
 			//sets vshmain args
 			_memset(vshmain_args, 0, sizeof(vshmain_args));
 			vshmain_args[0x01] = 0x04;
@@ -384,8 +465,8 @@ int kfunction()
 			struct SceKernelLoadExecVSHParam param;
 			_memset(&param, 0, sizeof(param));
 			param.size = sizeof(param);
-			param.args = 29;
 			param.argp = "ms0:/PSP/GAME/BOOT/FBOOT.PBP"; 
+			param.args = _strlen(param.argp) + 1;
 			param.key = "game";
 			param.vshmain_args_size = sizeof(vshmain_args);
 			param.vshmain_args = vshmain_args;
@@ -398,12 +479,16 @@ int kfunction()
 	
 	fill_screen(0x00000000);
 	
+	#ifdef DEBUG
+	_log("Launching VSH\n");
+	#endif
+	
 	//proceed
 	int (* _LoadExecForKernel_08F7166C)(int) = (void *)(mod->text_addr + 0x1674);
 	return _LoadExecForKernel_08F7166C(0);
 };
 
-void do_exploit() //sub_00010FAC
+void do_exploit()
 {
 	void (* _sceKernelLibcTime)(int, int, int, int, int) = NULL;
 	void (* _sceKernelDcacheWritebackAll)() = NULL;

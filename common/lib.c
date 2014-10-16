@@ -66,6 +66,19 @@ int _strcmp(const char *s1, const char *s2) //sub_00010F14
 	return val;
 }
 
+char * _strchr(char * str, char c)
+{
+	while(* str)
+	{
+		if(* str == c)
+			return str;
+			
+		str++;
+	};
+	
+	return NULL;
+};
+
 int ValidUserAddress(void * addr)
 {
 	if((u32)addr >= 0x08800000 && (u32)addr < 0x0A000000) 
