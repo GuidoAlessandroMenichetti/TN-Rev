@@ -1,12 +1,19 @@
 TARGET = TN
 OBJS = main.o ../common/lib.o
 
+CC = psp-gcc
+AS = psp-as
+
 INCDIR = ../include
-CFLAGS = -O2 -Os -G0 -Wall -fshort-wchar -fno-pic -mno-check-zero-division
-CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti
-ASFLAGS = $(CFLAGS)
+CFLAGS = -O2 -G0 -Wall -fno-pic -I../include -I$(shell psp-config --pspsdk-path)/include
 
-LDFLAGS = -nostartfiles -T linker.x -nostdlib
+all: $(TARGET).BIN
 
-PSPSDK = $(shell psp-config --pspsdk-path)
-include ../lib/build_bin.mak
+%.BIN: %.elf
+	psp-strip -s -O binary $< -o $@
+
+$(TARGET).elf: $(OBJS)
+	psp-ld -nostartfiles -T linker.x -nostdlib $^ -o $@
+
+clean:
+	rm -f $(OBJS) $(TARGET).elf $(TARGET).BIN
